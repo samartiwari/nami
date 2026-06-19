@@ -1,0 +1,61 @@
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Eclipse
+.project
+.classpath
+.settings/
+.factorypath
+
+# VS Code
+.vscode/
+
+# STS (Spring Tool Suite)
+.apt_generated
+.springBeans
+.sts4-cache/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Environment variables
+.env
+
+# Application secrets
+application-local.properties
+application-local.yml
+application-prod.properties
+application-prod.yml
+
+# Generated files
+out/
+
+# Java crash logs
+hs_err_pid*
+replay_pid*
+
+# Temporary files
+*.swp
+*.swo
+*~
