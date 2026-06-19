@@ -78,3 +78,55 @@ store them fully.Just partial storage so we can show them as a result.
 Also it will save a lot of space. We are just searching them for the
 user. Once the user clicks on a link our work is over.
 
+#### Text Processing
+Before indexing we have to process the text so that we can get the
+keywords.
+We convert the whole text to lowercase and then we split it into words
+We then remove the common words like "the", "a", "an", etc.
+These are called stop words
+We then remove the punctuation marks
+We then convert the words to their root form
+This is called stemming
+
+#### Tokenization
+Breaking down text into individual units
+Eg: {"java", "spring", "is", "great"}
+
+#### Stop words
+Common words like "the", "a", "an", etc. These are removed.
+
+#### Stemming
+Converting words to their root form
+Eg: Running, runner, ran -> run
+--------------------------------------------
+
+## Crawling
+
+A web crawler is made up of a queue (which stores the sites
+in the radar yet to be crawled) and a seen list (sites already
+visited).
+
+We start with a:
+
+- queue = ['seed_url']
+- seen = ['seed_url']
+
+then a loop takes one url at a time from the queue and 
+extract the data and put all the links in that data in the 
+queue after verifying its not in the seen. (also update the
+seen list)
+
+It is like a script. Naturally you might python is better
+suited.
+
+### How to read robot.txt
+
+- Find the block whose "User-agent" matches you.
+- If you are not mentioned specifically you fall in User-agent*
+- See the allowed and disallowed paths
+
+Acceptable crawl rate for wiki is 1 req/sec
+
+
+
+
