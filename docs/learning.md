@@ -127,6 +127,104 @@ suited.
 
 Acceptable crawl rate for wiki is 1 req/sec
 
+### How to make crawler
+
+#### Jsoup - java soup
+its a java library which has functions to pull out 
+required things from html texts like .title or .body ect.
+you can also fetch html with it. (a standard for crawling)
+
+Its also a stanard to parse html. If a java developer needs to parse
+html it will use jsoup. (It builds a kind of tree out of the html)
+Tree as in html tag is parent and title and body are chilren like that...
+
+#### When does a crawler start
+
+- Start up (Command line runner)
+- A get end point which trigger the run
+
+The better options is an end point because using a CLR the app
+is blocked for sometime during the startup (eg 17min)
+during that time it wont accept any requests
+Whereas with an endpoint the app is up instantly and the crawling
+happen only on one thread and the server can accept requests on other 
+threads.
+
+Initially ill use the CLR as its an extra step to run and hit an end 
+point right now while building the crawler.
+
+#### Command line runner method
+
+@Comonent for creating a bean. (managed by spring)
+
+if you want something to run after startup like a bootstrap
+you gotta have that in a class implementing 
+commandlinerunner class.
+
+there is a run method which needs to be overriden in 
+the class implmenting clr which is called upon startup.
+
+#### Start with crawler service
+
+- Add the jsoup package in pom.xml
+- Create the service
+- Make service class public so i can call it from controller
+- Call it from run method of class implementing clr
+
+**Without initializing db app will crash if you have the 
+dependency**
+
+#### Now make bot better
+
+- Have a name for it "namibot/0.1 (email)"
+- This is the convention name/version (email)
+- Now work on extraction of information not dumping full html
+- Exrtation like taking the links and stuff
+
+#### Extraction
+
+- Checkout all the links
+- Filter out the bad ones taking reference from robot.txt
+- Currently ill dumb down the robot txt
+
+Basically all the forbidden sites have ":" in them so ill use it
+as a rule (this skip some real sites as well but very less)
+
+Use unordered set as seen set for O(1) searching.
+Then do the loop for the crawler along with 1s sleep
+
+#### Exception handling
+Since crawling is like a cron job not to give a response to someone.
+A global exception handler is not required to handle exception.
+Because no one is waiting for response.
+Exceptions are handled differently here.
+
+There are two types of exceptions:
+- Checked - should be declared as throws when a method can throw it
+- unchecked - throws declaration is not required
+
+If you make a custom exception and extend Runtimeexception it 
+becomes unchecked. No need to explicitly declare it in method
+heading.
+
+Also if a method throw any checked exception it needs to be 
+declared in the header else it will show red line.
+You cannot run app without actually declaring all the checked 
+exceptions in method head, ide knows what it can throw.
+
+After mentioning the exceptions a method can throw, write the
+logic and if any exception happen (checked or unchecked) it will
+bubble up.
+
+Now the bubbling up exception needs to be caught somewhere 
+in the app in any level else it will crash the app.
+
+In the crawler we are catching the exception in the loop only.
+we try the logic and if caught skip the link entirely.
+
+
+
+
 
 
 
