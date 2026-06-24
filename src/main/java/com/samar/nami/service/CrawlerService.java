@@ -20,16 +20,19 @@ import java.util.Set;
 public class CrawlerService {
 
     private static final String WIKI_PREFIX = "https://en.wikipedia.org/wiki/";
-    private static final int PAGE_LIMIT = 50;
+    private static final int PAGE_LIMIT = 100;
     private static final String PENDING = "PENDING";
     private static final String DONE = "DONE";
 
     private final ArticleRepository articleRepository;
     private final FrontierRepository frontierRepository;
+    private final IndexingService indexingService;
 
-    public CrawlerService(ArticleRepository articleRepository, FrontierRepository frontierRepository) {
+    public CrawlerService(ArticleRepository articleRepository, FrontierRepository frontierRepository,
+                          IndexingService indexingService) {
         this.articleRepository = articleRepository;
         this.frontierRepository = frontierRepository;
+        this.indexingService = indexingService;
     }
 
     // The crawl loop: pulls PENDING urls from the frontier table, follows links.
@@ -60,7 +63,9 @@ public class CrawlerService {
 
                 // save the article content (skip if somehow already stored)
                 if (!articleRepository.existsByUrl(url)) {
-                    articleRepository.save(new Article(page.title, url, page.snippet));
+                    Article saved = articleRepository.save(new Article(page.title, url, page.snippet));
+                    // index the full page text (must happen after save — we need the generated ID)
+                    indexingService.indexPage(saved.getId(), page.fullText);
                 }
 
                 // collect NEW links (in-memory dedup), then batch insert as PENDING
@@ -117,6 +122,13 @@ public class CrawlerService {
         List<String> articleLinks = new ArrayList<>();
         for (Element link : doc.select("a[href]")) {
             String fullUrl = link.attr("abs:href");
+
+            // strip "#section" anchors — they point to the SAME page, not a new one
+            int hashIndex = fullUrl.indexOf("#");
+            if (hashIndex != -1) {
+                fullUrl = fullUrl.substring(0, hashIndex);
+            }
+
             if (fullUrl.startsWith(WIKI_PREFIX)) {
                 String titlePart = fullUrl.substring(WIKI_PREFIX.length());
                 if (!titlePart.contains(":")) {
@@ -125,18 +137,23 @@ public class CrawlerService {
             }
         }
 
-        return new PageData(title, snippet, articleLinks);
+        // full text for indexing (not stored in DB — only used during the crawl)
+        String fullText = doc.select("div.mw-parser-output").text();
+
+        return new PageData(title, snippet, fullText, articleLinks);
     }
 
     // small holder for one page's extracted data
     public static class PageData {
         final String title;
         final String snippet;
+        final String fullText;
         final List<String> links;
 
-        PageData(String title, String snippet, List<String> links) {
+        PageData(String title, String snippet, String fullText, List<String> links) {
             this.title = title;
             this.snippet = snippet;
+            this.fullText = fullText;
             this.links = links;
         }
     }

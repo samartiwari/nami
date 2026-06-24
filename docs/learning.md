@@ -338,6 +338,91 @@ or you need to change anything you cant just change the docker
 file and compose up, you have to compose down first to break down 
 the container first. (basically recreate)
 
+**Caught a bug** : The crawler treating sections of a page as different 
+pages so messi, messi#early_life, messi#barcelona etc belonging
+to the same page are considered differnt pages.
+To fix, strip everything after #.
+
+#### Inverted Index
+Now instead of just storing the snipped we are processing the 
+page and storing in inverted index now.
+
+Now how do we store it actually in DB?
+
+We will have an index table
+- Id (generated)
+- Word (eg: "messi", "java")
+- article (the article its in)
+
+So it will be each word takes multiple rows like
+
+Id    Word    Article
+1     Messi      3
+2     Java       2
+3     Messi      5...
+
+Now if we search SELECT * WHERE Word = Messi, it will search
+the whole DB which is bad so we "create index of word".
+Now whats that?
+
+It create a seperate B-tree (can have many children), of the words
+and it becomes searching with a binary search instead of a linear 
+search.
+Root is the middle word (lexographically),
+lets assume we are searching for "neymar", root is "messi"
+then we know we need to go right because n>m so searching become 
+log(n). Each node in tree points back to the table essentially helping
+us search faster.
+
+Just the trade off is insertion become slower as it will insert in 
+the tree as well.
+
+    indexes = @Index(name = "idx_word", columnList = "word")
+
+Annotate your entity with this and it will do the trick.
+
+In repository we use @Query annotation along with the 
+spring method name magic as we need a leaner return type.
+Without query specifically telling the return type should be 
+only article ids it will return the full SELECT * type .
+Basically the full row which is a little overkill.
+
+    @Query("SELECT i.articleId FROM InvertedIndex i WHERE i.word = :word")
+
+We use i. because Java SQL require alias.
+its basically same as 
+    
+    SELECT articleId FROM InvertedIndex WHERE word = :word
+
+Now create the indexing service which does
+- Loading of stop words from a file i found on kaggle containing over 1000 stop words
+- Lowercase the page
+- Tokenize it (basically break into words about puntuations and spaces)
+- put it in set to make words unique in a page
+- Also make sure the words are not part of stop words else else skip
+- batch insert all the word+article_id pair to inverted index table
+
+Now in crawling a page we first save the snippet into article 
+table, get the auto generated id, then use that in saving
+to inverted index table
+
+Now create a search service which takes search word, tokenize
+it as well and find articles related to each word and return an
+intersection of article.
+eg: if we search "world cup"
+it will find 
+- world - 3,5,6,9
+- cup - 3,6,7,13
+
+Then return 3 and 6 as it contain both world and cup.
+Very simple right now.
+
+    Version 1 complete
+
+## Version 2
+
+
+
 
 
 

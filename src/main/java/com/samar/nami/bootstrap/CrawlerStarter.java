@@ -15,6 +15,6 @@ class CrawlerStarter implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        crawlerService.crawl("https://en.wikipedia.org/wiki/Lorem_ipsum");
+        crawlerService.crawl("https://en.wikipedia.org/wiki/Lionel_Messi");
     }
 }
