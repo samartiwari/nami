@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16
+    container_name: nami-db
+    restart: always
+    shm_size: 128mb
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT}:5432"
+
+  adminer:
+    image: adminer
+    container_name: nami-adminer
+    restart: always
+    ports:
+      - "8000:8080"

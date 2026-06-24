@@ -222,6 +222,125 @@ in the app in any level else it will crash the app.
 In the crawler we are catching the exception in the loop only.
 we try the logic and if caught skip the link entirely.
 
+#### Snippet
+This is the text you see as small description of the site.
+Next try to extract that so later can be saved in db.
+Its like 160-200 chars long.
+
+For snippet, we can use first paragraph tag <p> we can find
+but some wiki pages have notices as first paragraph tag
+which reads "This is an accepted version of this page" or something
+like this.
+
+So its best to switch the selector from first paragraph to 
+finding paragraph in the actual body of the wiki page.
+Hence using div named "mw-parser-output" cause its specific for 
+wikipedia and only contain body.
+
+### Storage
+Now will use postgres to store the crawled stuff.
+Setup postgres docker container.
+
+First we will set the application properties.
+
+- Give a url to connect to
+- A username and password as you always connect to the database as someone.
+- Use the postgres driver (mentioned in the dependency)
+
+Now i have to create a docker file so i can run an instance of 
+postgres.
+Setup properly the docker-compose.yml file.
+
+**SHM SIZE** is a shared memory. By default its 64mb but can be set
+to 128mb as i have done it.
+This sets the size of a special type of memory a specific, special
+region used for inter-process communication.
+Like postgres have multiple processes like:
+
+- postgres
+- postgres: checkpointer
+- postgres: background writer
+- postgres: walwriter
+- postgres: autovacuum launcher
+
+each process work on their own private memory. but if any one 2 or 
+more processes need to pass data to each other that is done
+in shared memory.
+
+**Adminer** is used to see inside the postgres database.
+To check if things have saved or not.
+
+#### Environment variable
+
+Create a .env file which stores all the sensitive data like:
+
+- DB_HOST=localhost
+- DB_PORT=5432
+- DB_NAME=nami
+- DB_USER=nami
+- DB_PASSWORD=nami
+
+And docker files and application properties will read from it.
+dockker compose file reads directly from any .env file present 
+in the same folder whereas for the spring app i gotta load the 
+.env in the terminal so application properties can use it.
+
+We never commit .env file as it has secret passwords and keys.
+We commit .env.example (basically a dummy) which has all the 
+variables so people seeing the repo on git knows what they need
+atleast to run the app.
+
+#### Managing RAM
+
+The seen set and queue is in RAM and will delete when app closes.
+So we have to persist the seen as well as queue.
+
+Upto 1 million pages it prolly fine to keep in RAM as it takes 
+about 150MB-200MB.
+More than that which is like google level it will not fit in
+RAM.
+
+They (google) use something called **bloom filter** basically
+like it hashes the url and does something with it in binary form.
+Bloom filter can give false positives but never false negative.
+Like if bloom filter say i have never seen this url its 100% 
+correct.If it says i have seen this url it CAN be wrong.
+
+For this project lets cap the total pages around 1 million pages.
+So bloom filters is not required.
+
+#### Seen set
+Since upon crawling we save each page to article table, upon restart
+we will fetch from the article table and load the seen set
+in the bootstrap logic. (or any other table where all the articles
+exists)
+
+#### Queue
+Need a seperate table storing the queue and lets only have a 
+db table storing the queue instead of in memory so it exists
+after crashes as well.
+
+We can also have an in memory queue as well which is loaded from 
+the table of queue in bootstap for better performance but the 
+performance boost is not as great compared to the complexity it
+will introduce in the project.
+
+#### Proceeding
+- Make an article entity to store the id,title,snippet
+- Make a frontier entity (basically queue in db) to store url,seen/pending
+- Add respective repos and custom function in them as required
+- Using 2 tables instead of 1 for cleanliness keeping completely crawled urls seperate from yet to be crawled urls
+- Complete the service logic (which will be called from bootstrap)
+- Load the .env to terminal then run (run docker before that)
+
+If a containers ports have not been mapped properly
+or you need to change anything you cant just change the docker
+file and compose up, you have to compose down first to break down 
+the container first. (basically recreate)
+
+
+
+
 
 
 

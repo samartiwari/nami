@@ -1,77 +1,122 @@
 package com.samar.nami.service;
 
+import com.samar.nami.entity.Article;
+import com.samar.nami.entity.Frontier;
+import com.samar.nami.repository.ArticleRepository;
+import com.samar.nami.repository.FrontierRepository;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Queue;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
 public class CrawlerService {
 
     private static final String WIKI_PREFIX = "https://en.wikipedia.org/wiki/";
-    private static final int PAGE_LIMIT = 5;
+    private static final int PAGE_LIMIT = 50;
+    private static final String PENDING = "PENDING";
+    private static final String DONE = "DONE";
 
-    // The crawl loop: queue + seen-set, follows links until the limit is hit.
+    private final ArticleRepository articleRepository;
+    private final FrontierRepository frontierRepository;
+
+    public CrawlerService(ArticleRepository articleRepository, FrontierRepository frontierRepository) {
+        this.articleRepository = articleRepository;
+        this.frontierRepository = frontierRepository;
+    }
+
+    // The crawl loop: pulls PENDING urls from the frontier table, follows links.
     public void crawl(String seedUrl) throws InterruptedException {
-        Queue<String> queue = new ArrayDeque<>();
-        Set<String> seen = new HashSet<>();
+        // in-memory cache of every url already in the frontier (loaded once at startup)
+        // so we don't hit the DB to check "known?" for every link
+        Set<String> known = new HashSet<>(frontierRepository.findAllUrls());
 
-        queue.add(seedUrl);
-        seen.add(seedUrl);
+        // seed the frontier if this url isn't known yet (first run, or new seed)
+        if (!known.contains(seedUrl)) {
+            frontierRepository.save(new Frontier(seedUrl, PENDING));
+            known.add(seedUrl);
+        }
 
         int count = 0;
 
-        while (!queue.isEmpty() && count < PAGE_LIMIT) {
-            String url = queue.poll();          // take the next URL (front of queue)
+        while (count < PAGE_LIMIT) {
+            Optional<Frontier> next = frontierRepository.findFirstByStatus(PENDING);
+            if (next.isEmpty()) {
+                break;   // nothing left to crawl
+            }
+            Frontier current = next.get();
+            String url = current.getUrl();
 
             try {
                 System.out.println("Crawling [" + (count + 1) + "]: " + url);
-                List<String> links = getArticleLinks(url);   // fetch + parse + filter
+                PageData page = fetchPage(url);
 
-                for (String link : links) {
-                    if (!seen.contains(link)) {     // not seen before?
-                        seen.add(link);             // mark seen + enqueue together
-                        queue.add(link);
+                // save the article content (skip if somehow already stored)
+                if (!articleRepository.existsByUrl(url)) {
+                    articleRepository.save(new Article(page.title, url, page.snippet));
+                }
+
+                // collect NEW links (in-memory dedup), then batch insert as PENDING
+                List<Frontier> toInsert = new ArrayList<>();
+                for (String link : page.links) {
+                    if (!known.contains(link)) {
+                        known.add(link);
+                        toInsert.add(new Frontier(link, PENDING));
                     }
                 }
+                frontierRepository.saveAll(toInsert);
+
+                // mark this url as crawled
+                current.setStatus(DONE);
+                frontierRepository.save(current);
+
             } catch (IOException e) {
-                // one bad page (404, timeout, etc.) should NOT crash the whole crawl
+                // one bad page should not crash the crawl — mark it DONE so we don't retry forever
                 System.out.println("Skipping " + url + " — failed: " + e.getMessage());
+                current.setStatus(DONE);
+                frontierRepository.save(current);
             }
 
             count++;
-            Thread.sleep(1000);                 // politeness: 1 sec between fetches
+            Thread.sleep(1000);   // politeness: 1 sec between fetches
         }
 
-        System.out.println("Done. Crawled " + count + " pages, queue still has " + queue.size());
+        System.out.println("Done. Crawled " + count + " pages. Pending left: "
+                + frontierRepository.countByStatus(PENDING));
     }
 
-    // Fetch ONE page and return its good (crawlable) article links.
-    public List<String> getArticleLinks(String url) throws IOException {
+    // Fetch ONE page: returns its title, snippet, and good article links.
+    public PageData fetchPage(String url) throws IOException {
         Document doc = Jsoup.connect(url)
                 .userAgent("namibot/0.1 (samartiwari2004@gmail.com)")
                 .get();
 
         String title = doc.title();
-        Elements links = doc.select("a[href]");
 
-        System.out.println("Title: " + title);
+        // snippet = first real content paragraph, capped at ~200 chars
+        String snippet = "";
+        for (Element p : doc.select("div.mw-parser-output > p")) {
+            String text = p.text().trim();
+            if (text.length() > 50) {
+                snippet = text;
+                break;
+            }
+        }
+        if (snippet.length() > 200) {
+            snippet = snippet.substring(0, 200) + "...";
+        }
 
+        // filter links to real Wikipedia articles (no ":" namespace)
         List<String> articleLinks = new ArrayList<>();
-        for (Element link : links) {
+        for (Element link : doc.select("a[href]")) {
             String fullUrl = link.attr("abs:href");
-
-            // keep only real Wikipedia articles: must be a /wiki/ URL,
-            // and the title part (after /wiki/) must have no ":" namespace
             if (fullUrl.startsWith(WIKI_PREFIX)) {
                 String titlePart = fullUrl.substring(WIKI_PREFIX.length());
                 if (!titlePart.contains(":")) {
@@ -80,8 +125,19 @@ public class CrawlerService {
             }
         }
 
-        System.out.println("Number of correct links: " + articleLinks.size());
-        return articleLinks;
+        return new PageData(title, snippet, articleLinks);
     }
 
+    // small holder for one page's extracted data
+    public static class PageData {
+        final String title;
+        final String snippet;
+        final List<String> links;
+
+        PageData(String title, String snippet, List<String> links) {
+            this.title = title;
+            this.snippet = snippet;
+            this.links = links;
+        }
+    }
 }
