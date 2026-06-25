@@ -20,7 +20,7 @@ import java.util.Set;
 public class CrawlerService {
 
     private static final String WIKI_PREFIX = "https://en.wikipedia.org/wiki/";
-    private static final int PAGE_LIMIT = 100;
+    private static final int PAGE_LIMIT = 50;
     private static final String PENDING = "PENDING";
     private static final String DONE = "DONE";
 
@@ -63,7 +63,8 @@ public class CrawlerService {
 
                 // save the article content (skip if somehow already stored)
                 if (!articleRepository.existsByUrl(url)) {
-                    Article saved = articleRepository.save(new Article(page.title, url, page.snippet));
+                    int totalWords = page.fullText.split("\\W+").length;
+                    Article saved = articleRepository.save(new Article(page.title, url, page.snippet, totalWords));
                     // index the full page text (must happen after save — we need the generated ID)
                     indexingService.indexPage(saved.getId(), page.fullText);
                 }

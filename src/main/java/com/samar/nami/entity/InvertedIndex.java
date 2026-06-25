@@ -32,8 +32,12 @@ public class InvertedIndex {
     @Column(nullable = false)
     private Long articleId;
 
-    public InvertedIndex(String word, Long articleId) {
+    @Column(nullable = false)
+    private int count;
+
+    public InvertedIndex(String word, Long articleId, int count) {
         this.word = word;
         this.articleId = articleId;
+        this.count = count;
     }
 }

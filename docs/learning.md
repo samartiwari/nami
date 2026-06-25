@@ -421,6 +421,94 @@ Very simple right now.
 
 ## Version 2
 
+Currently result of search is whatever crawled first, but now 
+we have to make search result relevant as well.
+
+One of the methods is **TF-IDF** :
+
+- TF(term frequency), more number of searched words make the result more relevant.
+- Basically if we search "messi", a site containing more number of "messi" is more relevant
+- IDF (inverse document frequency), it searched the whole DB, if a word is contained in more number of 
+documents, it makes the word less rare hence less relevant.
+
+
+    IDF = log(total articles / articles containing this word)
+
+eg: 
+- "messi" in 15 out of 2400 articles → log(2400/15) = 5.07 (high — rare word, valuable)
+- "football" in 2000 out of 2400 → log(2400/2000) = 0.18 (low — common word, not useful for ranking)
+
+
+    TF  = count of word in article / total words in article
+    or
+    TF  = count of word in article
+
+eg: TF  = 3 mentions / 2000 total words = 0.0015
+
+    TF.IDF = TF X IDF
+
+Now, TF is calculated during crawling, as we will know article 37 
+contain messi 50 times during crawl so it will be stored in inverted
+table, whereas IDF is calculated in search time as we dont know how 
+many articles actually contain messi till we search.
+
+When a search term contain multiple words, it calculate tfidf of
+each word individually and sum them and show the result.
+
+Previously we had AND logic searching, if we search "messi football",
+we only get results containing both messi and football.
+
+Now we will also get result containing messi or football ,
+naturally the results containing messi and football will have
+higher score of tfidf so they will be ranked higher.
+
+In result also return the relevance score so i can show
+something like "relevant" or something else in ui.
+
+In single word searches, only tf determine ranking as idf is 
+same for a word for all articles only tf changes.
+TFIDF is only beneficial for multiple words.
+
+But TFIDF have some problems:
+- Word stuffing, an article containing only messi 1000 times will
+be shown at top even though it doesnt do any good
+- A 50k word document naturally contain more messi than 2k word
+document, there is no normalization.
+- Its not tunable, fixed formulas.
+
+### BM25
+
+    score(word, article) = IDF(word) × (tf × (k1 + 1)) / (tf + k1 × (1 - b + b × (dl / avgdl)))
+
+    IDF(word) = log(1 + (N - df + 0.5) / (df + 0.5))
+
+the +1 in formula is to prevent negative values as common words are
+punished and if total number of pages crawled is less like 50 its 
+highly likely a word is in most of them giving them a negative idf.
+
+N = total article in DB
+df = number of article containing this word
+
+                 tf × (k1 + 1)
+    ─────────────────────────────────────
+    tf + k1 × (1 - b + b × (dl / avgdl))
+
+tf = raw count of the word in this article
+k1 = saturation parameter (default 1.2)
+b = length normalization param (default 0.75)
+dl = total word in this article
+avgdl = avg total words in all articles
+
+k1 is how quickly the tf saturation
+
+- higher k1 means more mention scores higher
+- lower k1 means tf stops caring as frequency increase
+
+b is how much to penalize long document
+
+- b=0 is ignore length
+- b=1 fully normalize by length
+
 
 
 

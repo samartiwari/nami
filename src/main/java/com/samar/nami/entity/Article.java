@@ -27,9 +27,12 @@ public class Article {
     @Column(length = 1000)
     private String snippet;
 
-    public Article(String title, String url, String snippet) {
+    private int totalWords;
+
+    public Article(String title, String url, String snippet, int totalWords) {
         this.title = title;
         this.url = url;
         this.snippet = snippet;
+        this.totalWords = totalWords;
     }
 }

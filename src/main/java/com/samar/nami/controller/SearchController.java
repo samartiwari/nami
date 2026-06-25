@@ -1,6 +1,6 @@
 package com.samar.nami.controller;
 
-import com.samar.nami.entity.Article;
+import com.samar.nami.dto.SearchResult;
 import com.samar.nami.service.SearchService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,7 +18,7 @@ public class SearchController {
     }
 
     @GetMapping("/search")
-    public List<Article> search(@RequestParam String q) {
+    public List<SearchResult> search(@RequestParam String q) {
         return searchService.search(q);
     }
 }
