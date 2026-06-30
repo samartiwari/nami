@@ -2,6 +2,7 @@ package com.samar.nami.service;
 
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import org.tartarus.snowball.ext.EnglishStemmer;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -12,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Shared text processing: stop words + tokenization.
+ * Shared text processing: stop words + tokenization + stemming.
  * Used by both IndexingService (during crawl) and SearchService (during search).
  * Same logic in both places = same words get indexed and searched.
  */
@@ -43,14 +44,21 @@ public class TextProcessor {
     }
 
     /**
-     * Tokenize text into a list of meaningful words (with duplicates preserved for counting).
+     * Tokenize text, remove stop words, and stem the remaining words.
      */
     public List<String> tokenize(String text) {
         String[] tokens = text.toLowerCase().split("\\W+");
         List<String> result = new ArrayList<>();
+        
+        // Create a new stemmer per call (they are not thread-safe)
+        EnglishStemmer stemmer = new EnglishStemmer();
+
         for (String token : tokens) {
             if (token.length() > 2 && !stopWords.contains(token)) {
-                result.add(token);
+                // Apply the Porter Stemming rules
+                stemmer.setCurrent(token);
+                stemmer.stem();
+                result.add(stemmer.getCurrent());
             }
         }
         return result;

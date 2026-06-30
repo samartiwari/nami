@@ -11,10 +11,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 @Service
 public class CrawlerService {
@@ -37,15 +35,10 @@ public class CrawlerService {
 
     // The crawl loop: pulls PENDING urls from the frontier table, follows links.
     public void crawl(String seedUrl) throws InterruptedException {
-        // in-memory cache of every url already in the frontier (loaded once at startup)
-        // so we don't hit the DB to check "known?" for every link
-        Set<String> known = new HashSet<>(frontierRepository.findAllUrls());
-
-        // seed the frontier if this url isn't known yet (first run, or new seed)
-        if (!known.contains(seedUrl)) {
-            frontierRepository.save(new Frontier(seedUrl, PENDING));
-            known.add(seedUrl);
-        }
+        // Dedup is handled by the DB (unique constraint on frontier.url + ON CONFLICT
+        // DO NOTHING), so there is no in-memory "known" set to hold/rebuild. Seeding
+        // is just an insert-if-new; a duplicate seed is silently skipped.
+        frontierRepository.insertIfNew(seedUrl, PENDING);
 
         int count = 0;
 
@@ -69,15 +62,11 @@ public class CrawlerService {
                     indexingService.indexPage(saved.getId(), page.fullText);
                 }
 
-                // collect NEW links (in-memory dedup), then batch insert as PENDING
-                List<Frontier> toInsert = new ArrayList<>();
+                // insert each discovered link as PENDING; the DB skips ones already
+                // seen (ON CONFLICT DO NOTHING), so no in-memory dedup is needed
                 for (String link : page.links) {
-                    if (!known.contains(link)) {
-                        known.add(link);
-                        toInsert.add(new Frontier(link, PENDING));
-                    }
+                    frontierRepository.insertIfNew(link, PENDING);
                 }
-                frontierRepository.saveAll(toInsert);
 
                 // mark this url as crawled
                 current.setStatus(DONE);

@@ -1,12 +1,10 @@
 package com.samar.nami.controller;
 
-import com.samar.nami.dto.SearchResult;
+import com.samar.nami.dto.SearchResponse;
 import com.samar.nami.service.SearchService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 public class SearchController {
@@ -18,7 +16,9 @@ public class SearchController {
     }
 
     @GetMapping("/search")
-    public List<SearchResult> search(@RequestParam String q) {
-        return searchService.search(q);
+    public SearchResponse search(@RequestParam String q,
+                                 @RequestParam(required = false) Integer page,
+                                 @RequestParam(required = false) Integer size) {
+        return searchService.search(q, page, size);
     }
 }
