@@ -19,7 +19,7 @@ import java.util.Optional;
 public class CrawlerService {
 
     private static final String WIKI_PREFIX = "https://en.wikipedia.org/wiki/";
-    private static final int PAGE_LIMIT = 50;
+    private static final int PAGE_LIMIT = 150_000;
     private static final String PENDING = "PENDING";
     private static final String DONE = "DONE";
 
