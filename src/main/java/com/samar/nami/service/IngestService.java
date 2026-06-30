@@ -2,6 +2,7 @@ package com.samar.nami.service;
 
 import com.samar.nami.entity.Article;
 import com.samar.nami.repository.ArticleRepository;
+import com.samar.nami.repository.InvertedIndexRepository;
 import org.springframework.stereotype.Service;
 
 /**
@@ -20,10 +21,22 @@ public class IngestService {
 
     private final ArticleRepository articleRepository;
     private final IndexingService indexingService;
+    private final InvertedIndexRepository invertedIndexRepository;
 
-    public IngestService(ArticleRepository articleRepository, IndexingService indexingService) {
+    public IngestService(ArticleRepository articleRepository, IndexingService indexingService,
+                         InvertedIndexRepository invertedIndexRepository) {
         this.articleRepository = articleRepository;
         this.indexingService = indexingService;
+        this.invertedIndexRepository = invertedIndexRepository;
+    }
+
+    /**
+     * Rebuild the precomputed word_stats(word, df) table from inverted_index.
+     * Call this after a crawl/load batch so fuzzy "did you mean" reads fresh,
+     * fast df values instead of counting postings live. One bulk query (~seconds).
+     */
+    public void rebuildWordStats() {
+        invertedIndexRepository.rebuildWordStats();
     }
 
     /**

@@ -31,4 +31,14 @@ public class IngestController {
                 ? ResponseEntity.ok().build()
                 : ResponseEntity.status(HttpStatus.CONFLICT).build();
     }
+
+    /**
+     * Rebuild the precomputed word_stats (df per word) used by fuzzy search.
+     * Call once after a load/crawl batch finishes.
+     */
+    @PostMapping("/rebuild-word-stats")
+    public ResponseEntity<Void> rebuildWordStats() {
+        ingestService.rebuildWordStats();
+        return ResponseEntity.ok().build();
+    }
 }

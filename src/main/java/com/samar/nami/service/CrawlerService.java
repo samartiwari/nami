@@ -4,6 +4,7 @@ import com.samar.nami.entity.Article;
 import com.samar.nami.entity.Frontier;
 import com.samar.nami.repository.ArticleRepository;
 import com.samar.nami.repository.FrontierRepository;
+import com.samar.nami.repository.InvertedIndexRepository;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -25,12 +26,14 @@ public class CrawlerService {
     private final ArticleRepository articleRepository;
     private final FrontierRepository frontierRepository;
     private final IndexingService indexingService;
+    private final InvertedIndexRepository invertedIndexRepository;
 
     public CrawlerService(ArticleRepository articleRepository, FrontierRepository frontierRepository,
-                          IndexingService indexingService) {
+                          IndexingService indexingService, InvertedIndexRepository invertedIndexRepository) {
         this.articleRepository = articleRepository;
         this.frontierRepository = frontierRepository;
         this.indexingService = indexingService;
+        this.invertedIndexRepository = invertedIndexRepository;
     }
 
     // The crawl loop: pulls PENDING urls from the frontier table, follows links.
@@ -82,6 +85,12 @@ public class CrawlerService {
             count++;
             Thread.sleep(1000);   // politeness: 1 sec between fetches
         }
+
+        // Refresh the precomputed df table so fuzzy "did you mean" reflects the
+        // newly-crawled words. One bulk rebuild at the END of the run (not per page)
+        // keeps indexing fast — df only needs to be fresh for search, not mid-crawl.
+        System.out.println("Rebuilding word_stats (df) after crawl...");
+        invertedIndexRepository.rebuildWordStats();
 
         System.out.println("Done. Crawled " + count + " pages. Pending left: "
                 + frontierRepository.countByStatus(PENDING));
