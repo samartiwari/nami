@@ -509,6 +509,509 @@ b is how much to penalize long document
 - b=0 is ignore length
 - b=1 fully normalize by length
 
+The Command line runner actually runs after app starts
+it was a mistake earlier so i can crawl and search at the same
+time.
+
+    Version 2 complete
+
+## Version 3
+
+Now we focus on improve the result quality more by:
+
+- Stemming
+- Fuzzy Searching
+
+First we will stem using lucene snowball library
+basically a simple method which stems words.
+
+Now for fuzzy searching we use postgres trigrams extention.
+What it do is break the word into 3 letter words and make an 
+array and compare.
+
+eg:
+if we search "sprng",
+it will make [s,sp,spr,prn,rng]
+and "spring" will have,
+[s,sp,spr,pri,rin,ing]
+postgres compare them and return if similar.
+
+and this only runs if bm25 return 0 results.
+(later can apply trigrams along with bm25 and find the best of 
+both)
+
+If result = 0, do the trigrams fetching of the nearest word,
+if multiple words are wrong correct each word,
+also if multiple words are close how do we deal with it?
+
+Currently we will have the most similarity word wins,
+later we will have the doc frequency (the most recurring word)
+wins if the similartity is close of 2 or more words.
+
+#### Full Architecture of Fuzzy search
+
+Only work when searching return 0 result.
+With a "Did you mean xyz?" banner
+
+If 0 result is returned in a multi word search, meaning
+none of the words found a place in the result meaning 
+every word is incorrect.
+
+So first we replace each word with the most similar word
+using trigrams, and we keep a threshold value, so like
+if none word matches in close proximity we will just use
+the original word.
+(so a word is not replaced with something very different)
+
+Now if the corrected query == original query return 0 result
+
+and if not then do the BM25 search on the new query and give the
+result.
+
+Now it has a limitation:
+If search has many words and 1 word is correct and it gets us a result
+and other doesnt, we essentially only searching for 1 word
+We have to tackle that sooner or later.
+
+#### Gin index
+Currently the trigram will trigram my search words and brute 
+force search the whole db of words of inverted index to find the 
+closest trigram.
+To speed that up we use gin index:
+GIN = generalized inverted index
+it maps the trigrams to words containing it
+like for messi:
+mes = [messi,mess,enzymes]
+ess = [messi,mess,stress]
+
+so first it seperate the search words into trigrams and then for each trigram 
+find the words which contain it union them to get the set of actual candidated.
+Then find the actual similarity percentage and return the max.
+
+Honestly this model is not good, its returning similar but uncommon words
+when challenged.
+Like i searched "mussi" and its giving "musso" because it found one word 
+To tackle that , for each word we will calculate the document frequency,
+like in how many docs does it appear.
+And have a threshold number to tackle the rare word case.
+
+    Version 3 Complete
+
+## Version 4
+
+Now we add:
+- pagination support
+- caching
+- search auto-completion
+
+And this will conclude the features list for now, in later versions 
+we will try to improve the features if we can.
+
+### Pagination
+
+We calculate the full result each time and slide it based on what page is asked.
+This recalculation is avoided when caching.
+
+### Caching 
+
+For caching ill use redis.
+
+**If i search a row in any table by its primary key, it will always be 
+log(n) cause pk search is based on B-tree.**
+
+#### Big change
+Now instead of having an in memory seen map which cause scalibility issues,
+we can blindly add all the urls in the DB. We will make the url field 
+unique so same urls will not be added in the DB. Very smart.
+
+## Wiki dumps
+
+Now i think i need to test how fast if my search engine with big data,
+like 200k,million etc number of articles.
+So since i can only crawl at 11 days /million article speed i need to 
+use already existing dataset to populate my db.
+
+So we will be using a python script to feed the springboot the pages,
+currently 1 at a time (later 100 or 1000 at a time) and springboot 
+indexes them quickly without waiting 1 second because we are not making
+a request to the actual server so we can be as fast as we can.
+
+We will start with
+
+### Ingest service
+
+Basically copying all the previous service logic without the time delay.
+
+We will use the existing repo to store pages,
+and create just a new end point that the python script will hit.
+
+Disable auto crawler for this test.
+As it will pollute the db with its own crawling what we dont want.
+
+#### Python script time
+
+We install python venv and create a .venv folder in the root of the project.
+
+venv = virtual environment
+different project might need differnt python dependencies.
+using venv solve that as all the python dependencies for that project
+goes into that .venv folder and doesnt affect outside.
+
+Now we install datasets and requests package for our venv.
+
+Now actually write the loader.py which does not sit in venv.
+It sits outside
+
+Then run the app and then hit the python script.
+It stored 100 articles under 30 sec.
+Currently its slow because of
+- We are pulling articles from hugging face one at
+a time
+- one http post per article to the springboot
+
+We can download the articles and stream it locally,
+it will be way faster.
+
+We download one parquet file that is like having 
+around 155k articles.
+English wiki is 41 parquet files long.
+Containing around 6.4M articles.
+So we include downloading the file as well in the
+python script.
+
+Now we see the scalability issue:
+
+Rare words like messi, photosyntesis are well under
+50ms even with 50k articles in db, like time is not
+growing.
+But with common words like history, every thing has
+kind of a history section.
+So time grows, for 100k articles it takes 1 second
+and its agonising when we reach 1m it will go to 
+10 sec+.
+
+Now we are shifting the bm25 ranking to postgres.
+So postgres will find all the articles, score them , rank
+them and give the result back to java .
+
+- Java wont have to score 300k pages( for example) in a loop
+- 300k pages transfer will not happen, only like 10 pages 
+which is the result
+- java doesnt deserialize 300k rows to java objects
+only that 10 results.
+
+So it cut a lot of cost.
+
+Shifting to postgres helped a little
+eariler at 50k article time to search history was over 500ms
+now its a little over 200ms.
+At 100k articles its like 350ms.
+
+Now a little more optimization:
+
+In the b tree of inverted index:
+
+word    article_id     count
+
+refer       3           42
+messi       2           21
+refer       53          12
+
+so the b-tree was only indexed for word,
+so when it was to find "refer", it would search the node 
+then go back the the table to find the count.
+Now we actually store the count and stuff in the node of 
+b-tree so it doesnt have to go back to table again.
+
+And for fuzzy search optimization, we add a new table which has
+all the words and their df(document freq) precalculated so
+its not calculated at runtime causing the time delay.
+This table is not calculated for every article crawled.
+Cause every article has around 900 unique words it will
+be very time consuming so we have an endpoint which trigger 
+the calculation.
+We can manually hit the end point and it will also hit after
+the crawl is complete once.
+And also after every hour so i can use the feature during the
+2-3 days of crawling as well.
+This bring down the "messo" search from around 5-8s down to 
+70ms. Thats huge.
+
+Now optimizing about multi word,
+if i stack multiple common words like
+refer link extern includ time, time goes off the charts.
+But no one search for something like that so i am leaving
+this problem like that.
+Maybe a later solve.
+Solving it by adding those common words in stopwords list,
+cause honestly they dont provide any information regarding 
+the search them.
+
+Now we will host the project,
+a simple html,css, js page on cloudflare and apply
+cors so only my website can use my backend.
+Other people can still hit my end point with curl 
+and postman but no other website can use my endpoint.
+CORS is applied by the browser not by the backend.
+Basically its the browser like chrome,bings decision to
+not show a result when CORS is applied in backend, 
+if you make a browser which doesnt respect this boundry 
+then pages on your browser can hit any backend with cors.
+
+CORS is triggered in cross origin
+
+- scheme (http, https)
+- host (site name like naukri.com, swiggy.com)
+- port (8080, 5432)
+
+if any of them is different we will hit cors 
+by default cors block cross origin request it has to be
+explicitly enabled.
+
+CORS is configured in backend.
+
+#### To upload it in oracle we need
+
+- VCN
+- Internet gateway inside it
+- Route rule
+- Subnet
+- ingress rules (for port 80 , 443)
+
+Now the more generous VM is very crowded and difficult to 
+get my hands on.
+So i am thinking of using 2 VM (1gb ram each)
+1 for postgres+nginx and other for postgres.
+Hopefully this will work.
+
+#### Step 1
+
+Create VM-1 for spring and nginx.
+We get a private and a public key.
+Public key goes to the VM instance like a lock and only
+our private key can open it and help us to ssh into it.
+
+Private key stays on my computer
+Public key goes to the server.
+The SSH refuses to use private key that have too open 
+permissions basically if it can be read by everyone.
+So we gotta chmod 600 so only us can r+W.
+
+#### Step 2
+
+Create the VM-2 for postgres
+Reuse the ssh keys for this one.
+Dont make this public facing, no one from outside can access.
+Only my other vm.
+
+So this will only have private ip no public ip.
+So only my VM-1 can access it.
+We use ssh agent forwarding to jumpt from VM1 to 2 without
+copying my private key to VM1. (which can be a security issue)
+
+But this makes it cut off from the internet as well.
+So i am thinking of giving it public ip temporarily, 
+to download required files then going private.
+We add a ephermal ip address,
+its an ip address attached to the instance, when the instance
+dies it dies.(unlike reserved ip)
+
+#### Step 3
+
+Download postgres to vm2.
+Create nami user
+Create nami db
+Enable trigram extention of postgres for my project.
+
+By default postgres only listen on localhost.
+So any fetching/storing can be done from vm2 only.
+Basically **127.0.0.1**,
+VM2 has **10.0.0.230** its private ip.
+So we need to switch that up so postgres listen on the network.
+listen_addresses = '*'.
+After this postgres will listen to its localhost + private ip.
+In oracle public ip is NAT'd meaning (Network address translation)
+NAT means translating one ip to another when it pass through
+a middle point.
+And hence when we search for all the ips of a vm we only get 
+2(localhost and private) not public as public ip of each vm sits
+at the edge and forward the request to the private ip of the vm.
+(managed by oracle not given to the vm)
+
+For the whole VCN (virtual cloud network) its my own local network,
+just like for my home my router and all the devices are a network,
+i create a vcn in oracle and all the VMs inside it is part of the
+network. 
+This VCN will have a security list
+
+- ingress rules => incoming traffic
+any rule is just source(ip)+port
+so like 0.0.0.0/0 means whole internet
+port 22 means ssh
+so a 0.0.0.0/0 port22 mean whole of the internet can ssh into 
+our subnet
+- egress rule => outgoing traffic
+generally ports are not mentioned meaning they can reach to 
+any port of that perticular source.
+
+#### These specific rules make the firewall of the subnet,
+#### These rules catch the request early in the outer parameter
+#### of the network and never let them in if not allowed.   
+
+Since postgres is listening to * its technically listening to 
+the whole internet but due to the ingress rules of the subnet,
+no internet request can pass the firewall. (as we dont have
+0.0.0./0 5432 allowed)
+
+Apart from that we have another firewall the second firewall,
+**OS LEVEL FIREWALL**.
+iptables => its a firewall build into linux kernel, every linux
+machine has it, it filters packets at the OS level.
+Deciding what traffic machine itself reject or accept.
+So it filters traffic inside the VM.
+When a VM is created only SSH(22) is allowed.
+So the owner can ssh into the vm and change its settings and stuff.
+**Only after opening both firewall can you reach 5432**
+So i can stress my postgress but cannot connect to it yet.
+
+pg_hba.conf file is there to tell postgres who is allowed
+into the db, basically telling xyz ip can connect to
+nami db and as which user.
+Its very specific and acts as a last firewall for postgress.
+So even if its completely naked(my db), others cant connect to
+my db, and if they have the
+user name and pass of the db as well they cant connect if they
+dont have the exact ip mentioned in the conf file.
+
+    host    nami    nami    10.0.0.0/24    md5
+
+host-network connection
+nami-db
+nami-username
+ip range allowed
+md5- requires a password
+
+## CIDR Notation (the `/` in IP addresses)
+
+- **Core idea:** the `/N` turns a single IP into a **range** of IPs — it says how many bits are *fixed* (network part); the rest are free (host part).
+- **Key rule:** bigger number after `/` = smaller/more specific range; smaller number = broader range.
+- **IPv4 = 32 bits total** — the `/N` = how many of those bits are locked.
+
+### Common values
+- `/32` → **1 exact IP** (e.g. `10.0.0.202/32` = only that one address)
+- `/24` → **256 IPs** — last number free (`10.0.0.X` = `10.0.0.0`–`10.0.0.255`) = a subnet
+- `/16` → **65,536 IPs** — last two numbers free (`10.0.X.X`)
+- `/0` → **the entire internet** (`0.0.0.0/0` = every IP, "anyone anywhere")
+
+### Examples from my setup
+- `0.0.0.0/0` → whole internet → used for public rules (SSH, HTTP)
+- `10.0.0.0/24` → my private subnet (256 IPs) → both VMs live here
+- `10.0.0.202/32` → one exact IP → only VM 1
+
+### Notes
+- **Name:** CIDR (Classless Inter-Domain Routing), said "cider" — standard for writing IP ranges (firewall rules, subnets, routing).
+- **Mental shortcut:** `/N` = how "zoomed in" you are — `/32` = one address, `/0` = the whole internet.
+
+
+Then we add a rule, to allow vm1 to connect with postgres in vm2,
+without that postgres in vm1 will listen on the network but
+reject all the requests. (pg_hba.conf file)
+
+Then we restart postgres so it take the new configs into
+consideration.
+
+Have to read more about Computer Network
+
+This level 1 firewall which we established at first is between VMs in the same
+subnet as well, so VM1 cannot hit 5432 of another VM in the same subnet unless
+the firewall 1 explicitly allows it.
+
+So we add 
+10.0.0.0/24 allowed to 5432 making all the ips in the subnet access the 5432 port
+of each other.
+
+iptables rules(OS level rules) are not persisted in reboot so we gotta write that in
+netfilter-persistent save.
+
+#### Step 4
+
+Now we download java on VM1
+SO we build the jar file locally
+copy the jar file to vm1
+
+You can override application.properties value from outside,
+basically like environment variables.
+So even if a perticular value is true in jar file we can make
+it false from env.
+We are capping the heap size to 512mb for springboot.
+So it doesnt take a lot of ram we only have 1gb .
+But we setting up env is not permanent and tied to the ssh connection.
+To make env permanent we write it in systemd service file.
+
+- systemctl daemon-reload → tells systemd "re-scan your service files" (so it notices the new nami.service)
+- systemctl enable nami → "start this on every boot" (the auto-start-on-reboot part)
+- systemctl start nami → start it right now
+
+So even if vm restart nami will run automatically.
+
+#### Step 5
+Nginx reverse proxy to open the backend to the world.
+So we install the nginx and start it 
+Nginx auto start on port 80 (blocked by firewall 1 and 2)
+We have the rules so firewall pass 80 and 443.
+Then we add the rule in iptables on vm1 to allow those ports to the internet.
+
+Then nginx becomes reachable from the internet.
+Then configure nginx to direction requrests to port 8080.
+And our backend become live <3!!!!.
+
+Then we persist iptables.
+
+Now we need to convert our backend from http to https.
+Since our frontend is https it cannot call an http backend.
+(its called mixed content and browser blocks it for security)
+
+For making my backend https i need an ssl certificate only
+given to names not bare ip so i need a domain name.
+
+So i am using duckdns to get a free domain.
+I named it "nami-domain.duckdns.org",
+then point the domain name to my server ip
+
+We install certbot and its nginx plugin
+which provide 90 ssl certificate which auto renews.
+As well upgrade any http to https.
+For auto renewal of ssl, lets encrypt hit port 80 so 
+i need to keep that open, and if someone hit my backend
+at port 80 they will get unencrypted response, so 
+we upgrade http to https.
+
+Now how does http and https upgrade and mapping work to
+my backend??
+
+Now we update the backend url in the frontend and repush.
+All good after that.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
