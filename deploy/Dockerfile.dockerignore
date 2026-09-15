@@ -1,0 +1,5 @@
+# Only pom.xml and src/ are needed to build. Everything else stays out of the build,
+# above all .venv/ (the Python loader's libraries) and target/.
+*
+!pom.xml
+!src/

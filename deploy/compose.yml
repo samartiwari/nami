@@ -1,0 +1,60 @@
+# Nami on a server: the search app and its own private database.
+#
+#   docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build
+#
+# deploy/setup-server.sh runs exactly that, plus the HTTPS certificate and nginx steps.
+#
+# Neither container publishes a port. The database is reachable only from the app,
+# and the app only from the nginx it shares a network with (MiddleBerth's, on the
+# server that hosts both). That replaces the separate database VM Nami used before.
+
+name: nami-server
+
+services:
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_DB: nami
+      POSTGRES_USER: nami
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in deploy/.env}
+    volumes:
+      # The crawled corpus lives here, so it survives the containers being rebuilt.
+      - nami-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nami -d nami"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: nami
+      DB_USER: nami
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in deploy/.env}
+      # Without a cap, Java may take a quarter of the machine, which other services share.
+      JAVA_TOOL_OPTIONS: "-Xmx768m"
+    depends_on:
+      db: {condition: service_healthy}
+    networks:
+      default: {}
+      web:
+        # The name nginx uses to reach the app.
+        aliases: [nami-app]
+
+volumes:
+  nami-data:
+
+networks:
+  web:
+    # The network the server's nginx is on.
+    name: ${WEB_NETWORK:-middleberth_default}
+    external: true
